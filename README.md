@@ -7,7 +7,7 @@ A complete, production-ready authentication system built with Django REST Framew
 ### 🔒 **Security & Authentication**
 - **JWT Authentication** - Stateless token-based authentication with blacklisting
 - **Two-Factor Authentication (2FA)** - TOTP-based with QR codes and backup codes
-- **Rate Limiting** - IP-based protection against brute force attacks
+- **Advanced Password Reset** - Multiple reset methods with no rate limiting
 - **Session Management** - Track and terminate user sessions
 - **Password Security** - PBKDF2 hashing with salt and strength validation
 - **Account Locking** - Automatic lockout after failed login attempts
@@ -16,7 +16,8 @@ A complete, production-ready authentication system built with Django REST Framew
 ### 👥 **User Management**
 - **Role-Based Access Control** - User and Admin roles with granular permissions
 - **Email Verification** - Secure email-based account verification
-- **Password Reset** - Secure token-based password recovery via email
+- **Multi-Method Password Reset** - Email link, username, or security question reset
+- **Temporary Password System** - Secure temporary passwords for alternative resets
 - **Admin Dashboard** - Comprehensive user management and system monitoring
 - **Account Status Management** - Activate/deactivate users with email notifications
 
@@ -24,11 +25,14 @@ A complete, production-ready authentication system built with Django REST Framew
 - **Professional Email Templates** - HTML emails for all notifications
 - **SMTP Integration** - Gmail SMTP with app password support
 - **Automated Notifications** - Welcome, verification, password reset, role changes
+- **Temporary Password Emails** - Secure temporary password delivery
 - **Admin Action Emails** - Notify users of admin actions (role changes, status changes)
 
 ### 🎨 **Premium UI/UX**
 - **Corporate Design** - Professional blue/orange color scheme
 - **Responsive Layout** - Mobile-first design that works on all devices
+- **Multi-Method Reset Interface** - Tabbed interface for different reset methods
+- **Smart Auto-Detection** - Auto-fills email from login form
 - **Smooth Animations** - Professional hover effects and transitions
 - **Loading States** - User-friendly loading indicators and feedback
 - **Error Handling** - Clear error messages and validation feedback
@@ -123,6 +127,44 @@ npm run dev
 ```
 Frontend available at: `http://localhost:5173`
 
+## � Enhanced Password Reset System
+
+### Multiple Reset Methods
+The system offers three convenient ways to reset passwords:
+
+#### 1. **Email Reset** (Traditional)
+- Enter email address → receive reset link
+- No rate limiting - unlimited attempts
+- Auto-detection from login form
+
+#### 2. **Username Reset** (New)
+- Enter username only → receive temporary password
+- Shows email hint for verification
+- Temporary password must be changed after login
+
+#### 3. **Security Question Reset** (New)
+- Answer security question → receive temporary password
+- Question: "What is your username?"
+- Enhanced security with username verification
+
+### Smart Frontend Interface
+```jsx
+┌─────────────────────────────────────┐
+│ 🔒 Reset Password                   │
+├─────────────────────────────────────┤
+│ [Email Reset] [Username] [Security Q]│
+├─────────────────────────────────────┤
+│ Auto-detects email from login form  │
+│ One-click reset when email prefilled│
+└─────────────────────────────────────┘
+```
+
+### Security Features
+- **Temporary Passwords**: 12-character secure passwords
+- **Must Change**: Temporary passwords expire after first login
+- **Audit Logging**: All reset attempts logged for security
+- **Professional Emails**: Beautiful HTML templates with security warnings
+
 ## 📚 API Documentation
 
 ### 🔐 Authentication Endpoints
@@ -139,9 +181,13 @@ GET  /api/auth/user-stats/        - Get user statistics
 ```
 POST /api/auth/verify-email/      - Verify email with token
 POST /api/auth/resend-verification/ - Resend verification email
-POST /api/auth/forgot-password/   - Request password reset
+POST /api/auth/forgot-password/   - Request password reset (unlimited)
+POST /api/auth/forgot-password-username/ - Reset using username only
+POST /api/auth/forgot-password-alternative/ - Reset using security question
 POST /api/auth/reset-password/    - Reset password with token
 GET  /api/auth/validate-reset-token/<token>/ - Validate reset token
+POST /api/auth/password-reset-activity/ - Check reset activity status
+POST /api/auth/report-suspicious-reset/ - Report suspicious reset activity
 ```
 
 ### 🔑 Two-Factor Authentication
@@ -177,8 +223,9 @@ POST /api/auth/admin/reset-failed-attempts/ - Reset failed login attempts
 
 ### Rate Limiting
 - **Login**: 5 requests per 5 minutes per IP
-- **Password Reset**: 3 requests per hour per IP
 - **Registration**: 3 requests per hour per IP
+- **Password Reset**: No rate limiting (unlimited requests)
+- **Other Endpoints**: Standard rate limiting applies
 
 ### Audit Logging
 All user actions are logged with:
@@ -239,6 +286,7 @@ EMAIL_HOST_PASSWORD=your-16-character-app-password
 - **Welcome Email** - Sent after email verification
 - **Verification Email** - Account activation
 - **Password Reset** - Secure password recovery
+- **Temporary Password** - Secure temporary password delivery with instructions
 - **Role Change Notification** - Admin role changes
 - **Account Status Change** - Account activation/deactivation
 - **2FA Notifications** - 2FA enabled/disabled alerts
@@ -262,7 +310,22 @@ curl -X POST http://127.0.0.1:8000/api/auth/login/ \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"TestPass123!"}'
 
-# Test rate limiting (run 6 times quickly)
+# Test email password reset (unlimited)
+curl -X POST http://127.0.0.1:8000/api/auth/forgot-password/ \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com"}'
+
+# Test username password reset
+curl -X POST http://127.0.0.1:8000/api/auth/forgot-password-username/ \
+  -H "Content-Type: application/json" \
+  -d '{"username":"testuser"}'
+
+# Test security question reset
+curl -X POST http://127.0.0.1:8000/api/auth/forgot-password-alternative/ \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","username":"testuser","security_answer":"testuser"}'
+
+# Test rate limiting (run 6 times quickly) - only affects login
 for i in {1..6}; do
   curl -X POST http://127.0.0.1:8000/api/auth/login/ \
     -H "Content-Type: application/json" \
@@ -344,7 +407,7 @@ axios.defaults.baseURL = 'https://your-api-domain.com';
 # accounts/middleware.py
 RATE_LIMITS = {
     '/api/auth/login/': {'requests': 5, 'window': 300},
-    '/api/auth/forgot-password/': {'requests': 3, 'window': 3600},
+    # '/api/auth/forgot-password/': REMOVED - No rate limiting
     '/api/auth/register/': {'requests': 3, 'window': 3600},
 }
 ```
@@ -420,8 +483,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [x] JWT Authentication with blacklisting
 - [x] Two-Factor Authentication (2FA)
 - [x] Email verification system
-- [x] Password reset functionality
-- [x] Rate limiting protection
+- [x] **Enhanced Password Reset System** (3 methods, no rate limiting)
+- [x] **Multi-Method Reset Interface** (Email/Username/Security Question)
+- [x] **Temporary Password System** with secure email delivery
+- [x] **Smart Auto-Detection** of email from login form
 - [x] Comprehensive audit logging
 - [x] Session management
 - [x] Admin dashboard
@@ -447,7 +512,8 @@ This enterprise-grade authentication system demonstrates modern security practic
 
 **Key Achievements:**
 - 🔒 **Enterprise Security** - 92.3% security test pass rate
-- 🎨 **Premium UI** - Corporate-grade design
+- 🔄 **Advanced Password Reset** - 3 methods with unlimited usage
+- 🎨 **Premium UI** - Corporate-grade design with smart auto-detection
 - 📧 **Professional Emails** - Complete email notification system
 - 🛡️ **Comprehensive Audit** - Full compliance logging
 - ⚡ **Production Ready** - Scalable and maintainable codebase
