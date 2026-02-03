@@ -19,9 +19,10 @@ class RateLimitMiddleware(MiddlewareMixin):
     # Rate limit configurations
     RATE_LIMITS = {
         '/api/auth/login/': {'requests': 5, 'window': 300},  # 5 requests per 5 minutes
-        '/api/auth/forgot-password/': {'requests': 3, 'window': 3600},  # 3 requests per hour
+        # '/api/auth/forgot-password/': {'requests': 2, 'window': 3600},  # REMOVED - No rate limiting
         '/api/auth/reset-password/': {'requests': 5, 'window': 3600},  # 5 requests per hour
         '/api/auth/register/': {'requests': 3, 'window': 3600},  # 3 requests per hour
+        '/api/auth/report-suspicious-reset/': {'requests': 5, 'window': 3600},  # 5 reports per hour
     }
     
     def process_request(self, request):

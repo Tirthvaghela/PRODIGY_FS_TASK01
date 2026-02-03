@@ -21,13 +21,17 @@ from .views import (
     get_2fa_status,
     verify_2fa_login,
     forgot_password,
+    forgot_password_alternative,
+    forgot_password_username_only,
     reset_password,
     validate_reset_token,
     regenerate_backup_codes,
     verify_backup_code,
     get_active_sessions,
     terminate_session,
-    terminate_all_sessions
+    terminate_all_sessions,
+    get_password_reset_activity,
+    report_suspicious_reset_activity
 )
 
 urlpatterns = [
@@ -42,8 +46,12 @@ urlpatterns = [
     # Password and 2FA endpoints
     path('change-password/', change_password, name='change_password'),
     path('forgot-password/', forgot_password, name='forgot_password'),
+    path('forgot-password-alternative/', forgot_password_alternative, name='forgot_password_alternative'),
+    path('forgot-password-username/', forgot_password_username_only, name='forgot_password_username_only'),
     path('reset-password/', reset_password, name='reset_password'),
     path('validate-reset-token/<str:token>/', validate_reset_token, name='validate_reset_token'),
+    path('password-reset-activity/', get_password_reset_activity, name='get_password_reset_activity'),
+    path('report-suspicious-reset/', report_suspicious_reset_activity, name='report_suspicious_reset_activity'),
     path('setup-2fa/', setup_2fa, name='setup_2fa'),
     path('verify-2fa-setup/', verify_2fa_setup, name='verify_2fa_setup'),
     path('verify-2fa-login/', verify_2fa_login, name='verify_2fa_login'),

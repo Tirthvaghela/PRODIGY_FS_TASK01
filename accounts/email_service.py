@@ -894,5 +894,129 @@ class ProdigyEmailService:
         Prodigy Auth System
         """
 
+    def send_temporary_password_email(self, user, temp_password):
+        """Send temporary password email"""
+        try:
+            subject = 'Temporary Password - Prodigy Auth'
+            
+            html_content = self._create_temporary_password_html(user, temp_password)
+            text_content = self._create_temporary_password_text(user, temp_password)
+            
+            msg = EmailMultiAlternatives(
+                subject=subject,
+                body=text_content,
+                from_email=self.from_email,
+                to=[user.email]
+            )
+            msg.attach_alternative(html_content, "text/html")
+            msg.send()
+            
+            logger.info(f"Temporary password email sent to {user.email}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to send temporary password email to {user.email}: {e}")
+            return False
+    
+    def _create_temporary_password_html(self, user, temp_password):
+        """Create temporary password email HTML"""
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <title>Temporary Password</title>
+        </head>
+        <body style="font-family: 'Segoe UI', sans-serif; background: #f5f5f5; margin: 0; padding: 20px;">
+            <div style="max-width: 600px; margin: 0 auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                <div style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); padding: 40px 20px; text-align: center;">
+                    <h1 style="color: white; margin: 0; font-size: 28px;">Temporary Password</h1>
+                </div>
+                <div style="padding: 40px 30px;">
+                    <h2 style="color: #333; margin-bottom: 20px;">Hello {user.username}!</h2>
+                    <p style="color: #666; line-height: 1.6; font-size: 16px;">
+                        A temporary password has been generated for your Prodigy Auth account.
+                    </p>
+                    
+                    <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin: 25px 0; text-align: center; border: 2px solid #f59e0b;">
+                        <div style="font-size: 16px; font-weight: bold; color: #92400e; margin-bottom: 10px;">
+                            Your Temporary Password:
+                        </div>
+                        <div style="font-size: 24px; font-weight: bold; color: #92400e; font-family: 'Courier New', monospace; letter-spacing: 2px; background: white; padding: 15px; border-radius: 6px; margin: 10px 0;">
+                            {temp_password}
+                        </div>
+                        <div style="color: #92400e; font-size: 14px; margin-top: 10px;">
+                            Please copy this password carefully
+                        </div>
+                    </div>
+                    
+                    <div style="background: #fef2f2; padding: 20px; border-radius: 8px; margin: 25px 0; border-left: 4px solid #ef4444;">
+                        <p style="color: #dc2626; font-size: 14px; margin: 0; font-weight: 600;">
+                            <strong>IMPORTANT SECURITY NOTICE:</strong><br>
+                            • This is a temporary password - change it immediately after logging in<br>
+                            • Do not share this password with anyone<br>
+                            • This email should be deleted after use<br>
+                            • Enable 2FA for enhanced security
+                        </p>
+                    </div>
+                    
+                    <div style="text-align: center; margin: 30px 0;">
+                        <a href="{self.base_url}/login" 
+                           style="background: linear-gradient(135deg, #f59e0b, #d97706); 
+                                  color: white; 
+                                  padding: 16px 32px; 
+                                  text-decoration: none; 
+                                  border-radius: 8px; 
+                                  display: inline-block; 
+                                  font-weight: 600; 
+                                  font-size: 16px;">
+                            Login Now
+                        </a>
+                    </div>
+                    
+                    <div style="background: #f0f9ff; padding: 20px; border-radius: 8px; margin: 25px 0;">
+                        <p style="color: #1e40af; font-size: 14px; margin: 0;">
+                            <strong>Next Steps:</strong><br>
+                            1. Login with this temporary password<br>
+                            2. Go to Settings → Change Password<br>
+                            3. Set a strong, unique password<br>
+                            4. Consider enabling 2FA for extra security
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+    
+    def _create_temporary_password_text(self, user, temp_password):
+        """Create temporary password email text"""
+        return f"""
+        Temporary Password - Prodigy Auth
+        
+        Hello {user.username},
+        
+        A temporary password has been generated for your account.
+        
+        TEMPORARY PASSWORD: {temp_password}
+        
+        IMPORTANT SECURITY NOTICE:
+        - This is a temporary password - change it immediately after logging in
+        - Do not share this password with anyone
+        - Delete this email after use
+        - Enable 2FA for enhanced security
+        
+        Next Steps:
+        1. Login with this temporary password
+        2. Go to Settings → Change Password
+        3. Set a strong, unique password
+        4. Consider enabling 2FA
+        
+        Login here: {self.base_url}/login
+        
+        ---
+        Prodigy Auth System
+        """
+
 # Global instance
 email_service = ProdigyEmailService()

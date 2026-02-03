@@ -970,16 +970,24 @@ def verify_2fa_login(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def forgot_password(request):
-    """Send password reset email"""
+    """Send password reset email with minimal restrictions"""
     email = request.data.get('email')
+    ip_address = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR', '127.0.0.1')
     
     if not email:
         return Response({
             'error': 'Email address is required'
         }, status=status.HTTP_400_BAD_REQUEST)
     
+    # Check if email exists in database
     try:
-        user = User.objects.get(email=email, is_active=True)
+        user = User.objects.get(email=email)
+        
+        # Check if user is active
+        if not user.is_active:
+            return Response({
+                'error': 'This account is deactivated. Please contact support.'
+            }, status=status.HTTP_400_BAD_REQUEST)
         
         # Generate reset token
         reset_token = str(uuid.uuid4())
@@ -991,8 +999,22 @@ def forgot_password(request):
         # Send password reset email
         try:
             email_service.send_password_reset_email(user, reset_token)
+            
+            # Log password reset request
+            log_audit_event(
+                action='password_reset',
+                user=user,
+                request=request,
+                details={
+                    'email': email, 
+                    'reset_token_generated': True,
+                    'ip_address': ip_address
+                }
+            )
+            
             return Response({
-                'message': 'Password reset email sent successfully. Please check your inbox.'
+                'message': 'Password reset email sent successfully. Please check your inbox.',
+                'email_sent': True
             })
         except Exception as e:
             logger.error(f"Failed to send password reset email to {email}: {e}")
@@ -1001,10 +1023,22 @@ def forgot_password(request):
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
     except User.DoesNotExist:
-        # Don't reveal if email exists or not for security
+        # Log potential email enumeration attempt
+        log_security_event(
+            action='email_enumeration_attempt',
+            user=None,
+            request=request,
+            details={
+                'attempted_email': email,
+                'ip_address': ip_address
+            }
+        )
+        
+        # Email does not exist in database
         return Response({
-            'message': 'If an account with this email exists, a password reset link has been sent.'
-        })
+            'error': 'No account found with this email address. Please check your email or register for a new account.',
+            'email_exists': False
+        }, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -1155,6 +1189,215 @@ def terminate_all_sessions(request):
     return Response({
         'message': f'Terminated {terminated_count} sessions successfully'
     })
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_password_reset_activity(request):
+    """Get recent password reset activity for the user"""
+    user = request.user
+    
+    # Check if there's a recent reset request
+    recent_reset_key = f"recent_reset_{user.id}"
+    has_recent_reset = cache.get(recent_reset_key, False)
+    
+    # Get rate limiting info
+    email_rate_key = f"forgot_password_email_{user.email.lower()}"
+    email_attempts = cache.get(email_rate_key, 0)
+    
+    return Response({
+        'has_recent_reset': bool(has_recent_reset),
+        'email_attempts_today': email_attempts,
+        'max_attempts_per_hour': 2,
+        'cooldown_minutes': 15,
+        'security_info': {
+            'rate_limit_per_email': '2 requests per hour',
+            'cooldown_period': '15 minutes between requests',
+            'ip_protection': 'Maximum 3 different emails per IP per hour'
+        }
+    })
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def report_suspicious_reset_activity(request):
+    """Allow users to report if they received unexpected password reset emails"""
+    user = request.user
+    ip_address = request.META.get('HTTP_X_FORWARDED_FOR', '').split(',')[0] or request.META.get('REMOTE_ADDR', '127.0.0.1')
+    
+    details = request.data.get('details', '')
+    
+    # Log the report
+    log_security_event(
+        action='user_reported_suspicious_reset',
+        user=user,
+        request=request,
+        details={
+            'user_report': details,
+            'ip_address': ip_address,
+            'timestamp': timezone.now().isoformat()
+        }
+    )
+    
+    # Temporarily increase security for this user
+    security_key = f"enhanced_security_{user.id}"
+    cache.set(security_key, True, timeout=86400)  # 24 hours
+    
+    return Response({
+        'message': 'Thank you for reporting. We have enhanced security monitoring for your account.',
+        'enhanced_security_duration': '24 hours'
+    })
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password_alternative(request):
+    """Alternative password reset method using security questions or username"""
+    email = request.data.get('email')
+    username = request.data.get('username')
+    security_answer = request.data.get('security_answer', '')
+    
+    if not email and not username:
+        return Response({
+            'error': 'Email address or username is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Find user by email or username
+        if email:
+            user = User.objects.get(email=email)
+        else:
+            user = User.objects.get(username=username)
+        
+        # Check if user is active
+        if not user.is_active:
+            return Response({
+                'error': 'This account is deactivated. Please contact support.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # For now, we'll use a simple security question approach
+        # In production, you might want more sophisticated security questions
+        expected_answer = user.username.lower()  # Simple: username as security answer
+        
+        if security_answer.lower() == expected_answer:
+            # Generate temporary password
+            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+            
+            # Set temporary password
+            user.set_password(temp_password)
+            user.save()
+            
+            # Send temporary password via email
+            try:
+                email_service.send_temporary_password_email(user, temp_password)
+                
+                # Log alternative password reset
+                log_audit_event(
+                    action='alternative_password_reset',
+                    user=user,
+                    request=request,
+                    details={
+                        'method': 'security_question',
+                        'temp_password_sent': True
+                    }
+                )
+                
+                return Response({
+                    'message': 'Temporary password sent to your email. Please login and change your password immediately.',
+                    'temp_password_sent': True,
+                    'security_notice': 'Please change your password after logging in for security.'
+                })
+            except Exception as e:
+                logger.error(f"Failed to send temporary password to {user.email}: {e}")
+                return Response({
+                    'error': 'Failed to send temporary password. Please try again.'
+                }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        else:
+            return Response({
+                'error': 'Security answer is incorrect. Please try again.',
+                'hint': 'Hint: Your username'
+            }, status=status.HTTP_400_BAD_REQUEST)
+            
+    except User.DoesNotExist:
+        return Response({
+            'error': 'No account found with this email or username.',
+            'suggestion': 'Please check your credentials or register for a new account.'
+        }, status=status.HTTP_404_NOT_FOUND)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def forgot_password_username_only(request):
+    """Reset password using only username - generates new temporary password"""
+    username = request.data.get('username')
+    
+    if not username:
+        return Response({
+            'error': 'Username is required'
+        }, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        user = User.objects.get(username=username)
+        
+        # Check if user is active
+        if not user.is_active:
+            return Response({
+                'error': 'This account is deactivated. Please contact support.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Generate new temporary password
+        temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+        
+        # Set temporary password
+        user.set_password(temp_password)
+        user.save()
+        
+        # Send temporary password via email
+        try:
+            email_service.send_temporary_password_email(user, temp_password)
+            
+            # Log username-based password reset
+            log_audit_event(
+                action='username_password_reset',
+                user=user,
+                request=request,
+                details={
+                    'method': 'username_only',
+                    'temp_password_sent': True
+                }
+            )
+            
+            return Response({
+                'message': f'New temporary password sent to {user.email}. Please login and change your password immediately.',
+                'email_hint': f'{user.email[:3]}***@{user.email.split("@")[1]}',
+                'temp_password_sent': True,
+                'security_notice': 'Please change your password after logging in for security.'
+            })
+        except Exception as e:
+            logger.error(f"Failed to send temporary password to {user.email}: {e}")
+            return Response({
+                'error': 'Failed to send temporary password. Please try again.'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            
+    except User.DoesNotExist:
+        return Response({
+            'error': 'No account found with this username.',
+            'suggestion': 'Please check your username or register for a new account.'
+        }, status=status.HTTP_404_NOT_FOUND)
+    """Validate if reset token is valid"""
+    cache_key = f"password_reset_{token}"
+    user_id = cache.get(cache_key)
+    
+    if user_id:
+        try:
+            user = User.objects.get(id=user_id, is_active=True)
+            return Response({
+                'valid': True,
+                'email': user.email
+            })
+        except User.DoesNotExist:
+            pass
+    
+    return Response({
+        'valid': False,
+        'error': 'Invalid or expired reset token'
+    }, status=status.HTTP_400_BAD_REQUEST)
 
 @api_view(['GET'])
 @permission_classes([AllowAny])

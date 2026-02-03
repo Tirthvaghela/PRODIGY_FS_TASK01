@@ -143,6 +143,7 @@ const Login = () => {
         isOpen={showForgotPasswordModal}
         onClose={() => setShowForgotPasswordModal(false)}
         onSuccess={handleForgotPasswordSuccess}
+        prefilledEmail={formData.email}
       />
     </div>
   );
